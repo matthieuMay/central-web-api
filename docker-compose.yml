@@ -1,14 +1,18 @@
 services:
   db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: trello
-      POSTGRES_PASSWORD: trello
-      POSTGRES_DB: trello
-    ports:
-      - '5432:5432'
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    image: postgres:16
+    # TODO: Add the database environment variables.
+    # Development exercise only: never use these teaching credentials in production.
+    # TODO: Publish the Postgres port.
+    # TODO: Mount the Postgres named volume.
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    # TODO: Add the pgAdmin environment variables.
+    # Development exercise only: never use these teaching credentials in production.
+    # TODO: Publish the pgAdmin port.
+    # TODO: Mount the pgAdmin named volume.
 
 volumes:
-  pgdata:
+  postgres-data: # TODO: Attach this named volume to db.
+  pgadmin-data: # TODO: Attach this named volume to pgadmin.
