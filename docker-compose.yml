@@ -1,18 +1,27 @@
 services:
   db:
     image: postgres:16
-    # TODO: Add the database environment variables.
-    # Development exercise only: never use these teaching credentials in production.
-    # TODO: Publish the Postgres port.
-    # TODO: Mount the Postgres named volume.
+    # Local teaching credentials only. Never use these credentials in production.
+    environment:
+      POSTGRES_DB: trello
+      POSTGRES_USER: trello
+      POSTGRES_PASSWORD: trello
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
 
   pgadmin:
     image: dpage/pgadmin4:9
-    # TODO: Add the pgAdmin environment variables.
-    # Development exercise only: never use these teaching credentials in production.
-    # TODO: Publish the pgAdmin port.
-    # TODO: Mount the pgAdmin named volume.
+    # Local teaching credentials only. Never use these credentials in production.
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
 
 volumes:
-  postgres-data: # TODO: Attach this named volume to db.
-  pgadmin-data: # TODO: Attach this named volume to pgadmin.
+  postgres-data:
+  pgadmin-data:
