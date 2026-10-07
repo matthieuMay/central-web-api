@@ -1,20 +1,21 @@
 import 'dotenv/config'
-import cors from 'cors'
-import express from 'express'
-import { boardsRouter } from './routes/boards.js'
+import { createApp } from './app.js'
+import { createDb } from './db/client.js'
+import { prepare } from './db/migrate.js'
+import { Store } from './db/store.js'
 
-const app = express()
-const port = Number(process.env.PORT ?? 3000)
-
-app.use(cors())
-app.use(express.json())
-
-app.get('/health', (_req, res) => {
-  res.json({ ok: true })
-})
-
-app.use('/boards', boardsRouter)
-
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`)
-})
+const db = createDb()
+try {
+  await prepare(db)
+  const port = Number(process.env.PORT ?? 3000)
+  const server = createApp(new Store(db)).listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`)
+  })
+  const shutdown = () => server.close(() => { void db.close() })
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+} catch (error) {
+  await db.close()
+  console.error(error)
+  process.exitCode = 1
+}

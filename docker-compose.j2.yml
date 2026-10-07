@@ -1,0 +1,18 @@
+# Overlay for Day 2. The original J1 docker-compose.yml and pgAdmin remain usable.
+services:
+  db:
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U trello -d trello']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  pgweb:
+    image: sosedoff/pgweb:0.16.2
+    environment:
+      PGWEB_DATABASE_URL: postgres://trello:trello@db:5432/trello?sslmode=disable
+    ports:
+      - '8081:8081'
+    depends_on:
+      db:
+        condition: service_healthy

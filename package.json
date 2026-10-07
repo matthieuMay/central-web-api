@@ -8,15 +8,19 @@
     "start": "tsx src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
+    "db:reset": "tsx src/db/reset.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.39.3",
     "express": "^4.21.2",
-    "better-sqlite3": "^11.8.1",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "uuid": "^14.0.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

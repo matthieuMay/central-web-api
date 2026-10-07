@@ -1,6 +1,6 @@
 # Mini-Trello API
 
-REST API provided to students for Sprint 3+. Board / Column / Card over HTTP.
+REST API provided to students from the optional Day 2 Sprint 1 bonus onward. Board / Column / Card over HTTP.
 
 ## Language
 
@@ -13,7 +13,7 @@ Named list on a Board: has many Cards.
 _Avoid_: list (in API paths use `columns`)
 
 **Card**:
-Task item in a Column: title required.
+Task item in a Column: title required, description optional. Its position is expressed by order within the Column.
 _Avoid_: ticket, issue
 
 **Tag d’étape**:

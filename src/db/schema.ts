@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
-/** Shared logical schema — SQLite column types; Postgres mapped in db client when needed. */
+/** SQLite schema for file-backed development. */
 export const boards = sqliteTable('boards', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
@@ -10,7 +10,7 @@ export const columns = sqliteTable('columns', {
   id: text('id').primaryKey(),
   boardId: text('board_id')
     .notNull()
-    .references(() => boards.id),
+    .references(() => boards.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   position: integer('position').notNull().default(0),
 })
@@ -19,7 +19,8 @@ export const cards = sqliteTable('cards', {
   id: text('id').primaryKey(),
   columnId: text('column_id')
     .notNull()
-    .references(() => columns.id),
+    .references(() => columns.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
+  description: text('description'),
   position: integer('position').notNull().default(0),
 })

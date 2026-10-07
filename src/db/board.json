@@ -1,0 +1,35 @@
+{
+  "id": "mini-trello",
+  "title": "Sprint board 🚀",
+  "columns": [
+    {
+      "id": "sprint-backlog",
+      "title": "Sprint backlog",
+      "cards": [
+        { "id": "card-1", "title": "Sketch the board layout ✏️", "description": "Keep the four columns readable on small screens." },
+        { "id": "card-2", "title": "Define card props" },
+        { "id": "card-3", "title": "Check keyboard navigation ⌨️" }
+      ]
+    },
+    {
+      "id": "doing",
+      "title": "Doing",
+      "cards": [
+        { "id": "card-4", "title": "Build the Column component", "description": "Render each card from the JSON data." },
+        { "id": "card-5", "title": "Make the board responsive 📱" }
+      ]
+    },
+    {
+      "id": "review",
+      "title": "Review",
+      "cards": []
+    },
+    {
+      "id": "done",
+      "title": "Done ✅",
+      "cards": [
+        { "id": "card-6", "title": "Prepare the project shell" }
+      ]
+    }
+  ]
+}
