@@ -17,8 +17,19 @@ Task item in a Column: title required, description optional. Its position is exp
 _Avoid_: ticket, issue
 
 **User**:
-Person represented by a first name and last name, independent of Boards, Columns, and Cards.
+Person represented by a first name and last name. A User can be assigned to Cards and author Comments.
 _Avoid_: account
+
+**Assignee**:
+A User assigned to work on a Card.
+_Avoid_: Card user
+
+**Comment**:
+A note on a Card authored by a User.
+
+**Checklist item**:
+A task within a Card, with a description and a completion state.
+_Avoid_: Todo task, Card
 
 **Tag d’étape**:
 Immutable git tag marking API lab checkpoints (e.g. mock → CRUD → errors).

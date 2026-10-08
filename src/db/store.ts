@@ -1,6 +1,11 @@
 import { sql, type Connection, type Query } from './client.js'
 
-export type CardData = { id: string; title: string; description?: string }
+export type CardCollections = {
+  assignees: string[]
+  comments: { user: string; comment: string }[]
+  checklistItems: { description: string; done: boolean }[]
+}
+export type CardData = { id: string; title: string; description?: string } & CardCollections
 export type ColumnData = { id: string; title: string; cards: CardData[] }
 export type BoardData = { id: string; title: string; columns: ColumnData[] }
 export type UserData = { id: string; firstname: string; lastname: string }
@@ -13,13 +18,23 @@ type BoardRow = {
   board_id: string; board_title: string; column_id: string | null
   column_title: string | null; card_id: string | null
   card_title: string | null; description: string | null
+  assignees: string | null; comments: string | null; checklist_items: string | null
 }
-type CardRow = { id: string; title: string; description: string | null; column_id: string }
+type CardRow = { id: string; title: string; description: string | null; column_id: string } & {
+  assignees: string; comments: string; checklist_items: string
+}
 type ColumnRow = { id: string; board_id: string }
 type OrderRow = { id: string }
 
-function cardData(row: CardRow): CardData {
-  return { id: row.id, title: row.title, ...(row.description === null ? {} : { description: row.description }) }
+function cardData(row: Pick<CardRow, 'id' | 'title' | 'description' | 'assignees' | 'comments' | 'checklist_items'>): CardData {
+  return {
+    id: row.id,
+    title: row.title,
+    ...(row.description === null ? {} : { description: row.description }),
+    assignees: JSON.parse(row.assignees),
+    comments: JSON.parse(row.comments),
+    checklistItems: JSON.parse(row.checklist_items),
+  }
 }
 
 export class Store {
@@ -29,11 +44,20 @@ export class Store {
     return this.db.all<UserData>(sql`SELECT id, firstname, lastname FROM users ORDER BY firstname, lastname, id`)
   }
 
+  private async validateUsers(data: Partial<CardCollections>): Promise<void> {
+    const ids = new Set([...(data.assignees ?? []), ...(data.comments ?? []).map((comment) => comment.user)])
+    if (!ids.size) return
+    const found = await this.db.all<{ id: string }>(sql`
+      SELECT id FROM users WHERE id IN (${sql.join([...ids].map((id) => sql`${id}`), sql`, `)})`)
+    if (found.length !== ids.size) throw new ApiError(400, 'User not found')
+  }
+
   async board(id: string): Promise<BoardData | null> {
     const rows = await this.db.all<BoardRow>(sql`
       SELECT b.id AS board_id, b.title AS board_title,
         c.id AS column_id, c.title AS column_title,
-        a.id AS card_id, a.title AS card_title, a.description
+        a.id AS card_id, a.title AS card_title, a.description,
+        a.assignees, a.comments, a.checklist_items
       FROM boards b
       LEFT JOIN columns c ON c.board_id = b.id
       LEFT JOIN cards a ON a.column_id = c.id
@@ -48,14 +72,22 @@ export class Store {
         column = { id: row.column_id, title: row.column_title!, cards: [] }
         board.columns.push(column)
       }
-      if (row.card_id !== null) column.cards.push({
-        id: row.card_id, title: row.card_title!, ...(row.description === null ? {} : { description: row.description }),
-      })
+      if (row.card_id !== null) column.cards.push(cardData({
+        id: row.card_id, title: row.card_title!, description: row.description,
+        assignees: row.assignees!, comments: row.comments!, checklist_items: row.checklist_items!,
+      }))
     }
     return board
   }
 
-  async create(columnId: string, data: CardData): Promise<CardData> {
+  async create(columnId: string, data: Omit<CardData, keyof CardCollections> & Partial<CardCollections>): Promise<CardData> {
+    await this.validateUsers(data)
+    const card: CardData = {
+      ...data, assignees: data.assignees ?? [], comments: data.comments ?? [], checklistItems: data.checklistItems ?? [],
+    }
+    const assignees = JSON.stringify(card.assignees)
+    const comments = JSON.stringify(card.comments)
+    const checklistItems = JSON.stringify(card.checklistItems)
     const create = async (tx: Query) => {
       const column = (await tx.all<ColumnRow>(sql`SELECT id, board_id FROM columns WHERE id = ${columnId}`))[0]
       if (!column) throw new ApiError(404, 'Column not found')
@@ -63,8 +95,8 @@ export class Store {
       if ((await tx.all(sql`SELECT id FROM cards WHERE id = ${data.id}`)).length) throw new ApiError(409, 'Card ID already exists')
       const [{ next_position }] = await tx.all<{ next_position: number }>(sql`
         SELECT COALESCE(MAX(position) + 1, 0) AS next_position FROM cards WHERE column_id = ${columnId}`)
-      await tx.run(sql`INSERT INTO cards (id, column_id, title, description, position)
-        VALUES (${data.id}, ${columnId}, ${data.title}, ${data.description ?? null}, ${next_position})`)
+      await tx.run(sql`INSERT INTO cards (id, column_id, title, description, position, assignees, comments, checklist_items)
+        VALUES (${card.id}, ${columnId}, ${card.title}, ${card.description ?? null}, ${next_position}, ${assignees}, ${comments}, ${checklistItems})`)
     }
     if (this.db.transactionSync) {
       this.db.transactionSync((tx) => {
@@ -73,21 +105,25 @@ export class Store {
         if (tx.all(sql`SELECT id FROM cards WHERE id = ${data.id}`).length) throw new ApiError(409, 'Card ID already exists')
         const [{ next_position }] = tx.all<{ next_position: number }>(sql`
           SELECT COALESCE(MAX(position) + 1, 0) AS next_position FROM cards WHERE column_id = ${columnId}`)
-        tx.run(sql`INSERT INTO cards (id, column_id, title, description, position)
-          VALUES (${data.id}, ${columnId}, ${data.title}, ${data.description ?? null}, ${next_position})`)
+        tx.run(sql`INSERT INTO cards (id, column_id, title, description, position, assignees, comments, checklist_items)
+          VALUES (${card.id}, ${columnId}, ${card.title}, ${card.description ?? null}, ${next_position}, ${assignees}, ${comments}, ${checklistItems})`)
       })
     } else await this.db.transaction(create)
-    return data
+    return card
   }
 
-  async patch(id: string, changes: { title?: string; description?: string | null }): Promise<CardData> {
+  async patch(id: string, changes: Partial<Omit<CardData, 'id' | 'description'>> & { description?: string | null }): Promise<CardData> {
+    await this.validateUsers(changes)
     const updates = [
       ...(changes.title === undefined ? [] : [sql`title = ${changes.title}`]),
       ...(changes.description === undefined ? [] : [sql`description = ${changes.description}`]),
+      ...(changes.assignees === undefined ? [] : [sql`assignees = ${JSON.stringify(changes.assignees)}`]),
+      ...(changes.comments === undefined ? [] : [sql`comments = ${JSON.stringify(changes.comments)}`]),
+      ...(changes.checklistItems === undefined ? [] : [sql`checklist_items = ${JSON.stringify(changes.checklistItems)}`]),
     ]
     const [card] = await this.db.all<CardRow>(sql`
       UPDATE cards SET ${sql.join(updates, sql`, `)} WHERE id = ${id}
-      RETURNING id, title, description, column_id`)
+      RETURNING id, title, description, column_id, assignees, comments, checklist_items`)
     if (!card) throw new ApiError(404, 'Card not found')
     return cardData(card)
   }

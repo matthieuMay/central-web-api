@@ -15,6 +15,13 @@
       "when": 1791486207259,
       "tag": "0001_loose_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791487095061,
+      "tag": "0002_sour_thanos",
+      "breakpoints": true
     }
   ]
 }

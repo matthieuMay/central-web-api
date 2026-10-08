@@ -71,7 +71,14 @@ async function suite(driver: 'sqlite' | 'postgres') {
     const initial = await request('/boards/mini-trello')
     assert.equal(initial.status, 200)
     const board = initial.body as BoardData
-    assert.deepEqual(board, boardFixture)
+    const empty = { assignees: [], comments: [], checklistItems: [] }
+    const seededBoard = {
+      ...boardFixture,
+      columns: boardFixture.columns.map((column) => ({
+        ...column, cards: column.cards.map((card) => ({ ...card, ...empty })),
+      })),
+    }
+    assert.deepEqual(board, seededBoard)
     assert.equal(board.id, 'mini-trello')
     assert.equal(board.title, 'Sprint board 🚀')
     assert.deepEqual(board.columns.map((col) => col.id), ['sprint-backlog', 'doing', 'review', 'done'])
@@ -80,10 +87,12 @@ async function suite(driver: 'sqlite' | 'postgres') {
     assert.deepEqual(board.columns[0].cards[0], {
       id: 'card-1', title: 'Sketch the board layout ✏️',
       description: 'Keep the four columns readable on small screens.',
+      ...empty,
     })
     assert.deepEqual(board.columns[1].cards[0], {
       id: 'card-4', title: 'Build the Column component',
       description: 'Render each card from the JSON data.',
+      ...empty,
     })
     assert.deepEqual(Object.keys(board.columns[2]), ['id', 'title', 'cards'])
     await expectError('/boards/unknown', 'GET', undefined, 404, 'Board not found')
@@ -126,13 +135,42 @@ async function suite(driver: 'sqlite' | 'postgres') {
     ]) await expectError('/columns/review/cards', 'POST', invalid, 400, 'Description must be text')
     await expectError('/columns/review/cards', 'POST', { id: v7(), title: 'Test', position: 0 },
       400, 'Invalid request body')
-    const created = await request('/columns/doing/cards', 'POST', { id, title: '  New task  ', description: 'Saved' })
+    const entries = {
+      assignees: [users[1].id, users[0].id],
+      comments: [{ user: users[0].id, comment: ' First note ' }, { user: users[1].id, comment: 'Second' }],
+      checklistItems: [{ description: ' First step ', done: false }, { description: 'Second step', done: true }],
+    }
+    const normalized = {
+      assignees: entries.assignees,
+      comments: [{ user: users[0].id, comment: 'First note' }, { user: users[1].id, comment: 'Second' }],
+      checklistItems: [{ description: 'First step', done: false }, { description: 'Second step', done: true }],
+    }
+    const created = await request('/columns/doing/cards', 'POST', {
+      id, title: '  New task  ', description: 'Saved', ...entries,
+    })
     assert.equal(created.status, 201)
-    assert.deepEqual(created.body, { id, title: 'New task', description: 'Saved' })
+    assert.deepEqual(created.body, { id, title: 'New task', description: 'Saved', ...normalized })
     await expectError('/columns/doing/cards', 'POST', { id, title: 'Duplicate' },
       409, 'Card ID already exists')
     assert.deepEqual((await request('/boards/mini-trello')).body.columns[1].cards.map((c: { id: string }) => c.id),
       ['card-4', 'card-5', id])
+    assert.deepEqual((await request('/boards/mini-trello')).body.columns[1].cards.at(-1), created.body)
+    const missingUser = v7()
+    for (const invalid of [
+      { assignees: [missingUser] }, { comments: [{ user: missingUser, comment: 'Note' }] },
+      { assignees: [users[0].id, users[0].id] }, { assignees: null },
+      { comments: [{ user: users[0].id, comment: '  ' }] },
+      { comments: [{ user: users[0].id, comment: 'ok', id: 'unexpected' }] },
+      { checklistItems: [{ description: ' ', done: false }] },
+      { checklistItems: [{ description: 'Step' }] },
+      { checklistItems: [{ description: 'Step', done: 1 }] },
+    ]) {
+      const failedId = v7()
+      const response = await request('/columns/doing/cards', 'POST', { id: failedId, title: 'Test', ...invalid })
+      assert.equal(response.status, 400)
+      assert.equal((await request('/boards/mini-trello')).body.columns[1].cards.some(
+        (card: { id: string }) => card.id === failedId), false)
+    }
 
     await expectError('/cards/card-1', 'PATCH', {}, 400, 'Patch cannot be empty')
     await expectError('/cards/card-1', 'PATCH', { title: '  ' }, 400, 'Title must be nonblank')
@@ -141,16 +179,36 @@ async function suite(driver: 'sqlite' | 'postgres') {
       400, 'Description must be text or null')
     await expectError('/cards/card-1', 'PATCH', { column: 'review' }, 400, 'Invalid request body')
     await expectError('/cards/nope', 'PATCH', { title: 'Test' }, 404, 'Card not found')
+    const beforeInvalidPatch = (await request('/boards/mini-trello')).body
+    for (const invalid of [
+      { assignees: [missingUser] }, { comments: [{ user: missingUser, comment: 'Note' }] },
+      { assignees: [users[0].id, users[0].id] }, { assignees: null },
+      { comments: [{ user: users[0].id, comment: '' }] },
+      { checklistItems: [{ description: 'Task', done: null }] },
+    ]) {
+      const response = await request(`/cards/${id}`, 'PATCH', { title: 'Must not change', ...invalid })
+      assert.equal(response.status, 400)
+      assert.deepEqual((await request('/boards/mini-trello')).body, beforeInvalidPatch)
+    }
     assert.deepEqual((await request('/cards/card-1', 'PATCH', { title: ' Edited ', description: 'Changed' })).body,
-      { id: 'card-1', title: 'Edited', description: 'Changed' })
+      { id: 'card-1', title: 'Edited', description: 'Changed', ...empty })
     assert.deepEqual((await request('/cards/card-1', 'PATCH', { description: null })).body,
-      { id: 'card-1', title: 'Edited' })
+      { id: 'card-1', title: 'Edited', ...empty })
     assert.deepEqual((await request('/cards/card-1', 'PATCH', { description: 'Restored' })).body,
-      { id: 'card-1', title: 'Edited', description: 'Restored' })
+      { id: 'card-1', title: 'Edited', description: 'Restored', ...empty })
     assert.deepEqual((await request('/cards/card-1', 'PATCH', { description: null })).body,
-      { id: 'card-1', title: 'Edited' })
+      { id: 'card-1', title: 'Edited', ...empty })
     assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { title: ' Renamed ' })).body,
-      { id, title: 'Renamed', description: 'Saved' })
+      { id, title: 'Renamed', description: 'Saved', ...normalized })
+    const replaced = {
+      assignees: [users[0].id],
+      comments: [{ user: users[1].id, comment: 'Updated' }],
+      checklistItems: [{ description: 'First step', done: true }],
+    }
+    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', replaced)).body,
+      { id, title: 'Renamed', description: 'Saved', ...replaced })
+    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { comments: [] })).body,
+      { id, title: 'Renamed', description: 'Saved', ...replaced, comments: [] })
 
     const before = (await request('/boards/mini-trello')).body
     for (const invalid of [
@@ -176,9 +234,9 @@ async function suite(driver: 'sqlite' | 'postgres') {
     const reviewId = v7()
     const inEmptyReview = await request('/columns/review/cards', 'POST', { id: reviewId, title: '  Review me  ' })
     assert.equal(inEmptyReview.status, 201)
-    assert.deepEqual(inEmptyReview.body, { id: reviewId, title: 'Review me' })
+    assert.deepEqual(inEmptyReview.body, { id: reviewId, title: 'Review me', ...empty })
     assert.deepEqual((await request('/boards/mini-trello')).body.columns[2].cards,
-      [{ id: reviewId, title: 'Review me' }])
+      [{ id: reviewId, title: 'Review me', ...empty }])
     assert.deepEqual((await request('/cards/card-4', 'PUT', { column: 'done', position: 0 })).body
       .columns[3].cards.map((c: { id: string }) => c.id), ['card-4', 'card-6'])
     assert.deepEqual((await request('/cards/card-4', 'PUT', { column: 'done', position: 1 })).body
@@ -213,7 +271,8 @@ async function suite(driver: 'sqlite' | 'postgres') {
     assert.equal(persisted.columns[0].cards[0].title, 'Edited')
     assert.deepEqual(persisted.columns[3].cards.map((card) => card.id), ['card-4', 'card-6'])
     assert.deepEqual(persisted.columns[2].cards.map((card) => card.id), reviewOrder)
-    assert.deepEqual(persisted.columns[1].cards.at(-1), { id, title: 'Renamed', description: 'Saved' })
+    assert.deepEqual(persisted.columns[1].cards.at(-1),
+      { id, title: 'Renamed', description: 'Saved', ...replaced, comments: [] })
     assert.deepEqual((await request('/users')).body, usersWithExtra)
     await seed(db, true)
     assert.deepEqual(await new Store(db).board('mini-trello'), board)
@@ -227,7 +286,7 @@ async function suite(driver: 'sqlite' | 'postgres') {
     })
     const restored = await fetch(base + '/boards/mini-trello')
     assert.equal(restored.status, 200)
-    assert.deepEqual(await restored.json(), boardFixture)
+    assert.deepEqual(await restored.json(), seededBoard)
     const commandResetUsers = (await request('/users')).body as UserData[]
     assert.equal(commandResetUsers.length, 10)
     assert.ok(commandResetUsers.every((user) => !resetUsers.some((old) => old.id === user.id)))

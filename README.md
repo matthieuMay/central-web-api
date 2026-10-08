@@ -2,8 +2,9 @@
 
 Teacher-provided local API for the optional Day 2 Sprint 1 Query bonus and the
 common Sprint 2 movement exercise. Node.js + TypeScript + Express + Drizzle.
-The board response matches the Front `BoardData` shape; the initial board is
-copied from Prep's `mirrors/front/data/board.json` into `src/db/board.json`.
+The board response contains the seed board copied from Prep's
+`mirrors/front/data/board.json` into `src/db/board.json`, with three additional
+arrays on each Card: `assignees`, `comments`, and `checklistItems`.
 
 ## Day 2: Postgres (default)
 
@@ -83,8 +84,27 @@ curl -X PUT "http://localhost:3000/cards/$CARD_ID" -H 'Content-Type: application
   -d '{"column":"done"}'
 ```
 
-POST appends and returns the created Card; PATCH accepts `title`, `description`,
-or both (`null` clears description); PUT returns the entire updated Board.
+POST appends and returns the created Card; PATCH accepts `title`, `description`
+(`null` clears description), and the three Card arrays. PUT returns the entire
+updated Board.
+The arrays are always present in Card responses and `GET /boards/:id`, even when
+empty. POST accepts them optionally (omitted arrays start empty); PATCH replaces
+each supplied array in full and leaves omitted fields unchanged. For example:
+
+```json
+{
+  "assignees": ["existing-user-id"],
+  "comments": [{ "user": "existing-user-id", "comment": "Ready for review" }],
+  "checklistItems": [{ "description": "Check the layout", "done": false }]
+}
+```
+
+Get IDs from `GET /users`. Assignees must be unique, and assignee and comment
+author IDs must exist. Comment text and checklist descriptions must be nonblank
+and are trimmed; `done` must be a boolean. Invalid POST/PATCH bodies return 400
+without changing the Card. Array order is retained, and PATCH can clear an array
+by sending `[]`.
+
 Omitting `position` on PUT appends; an optional integer `position` places the
 card at that zero-based index after removal. GET after a move verifies its
 persisted location. The seed's `card-1`–`card-6` IDs remain editable; only

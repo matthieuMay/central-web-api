@@ -23,6 +23,9 @@ export const cards = sqliteTable('cards', {
   title: text('title').notNull(),
   description: text('description'),
   position: integer('position').notNull().default(0),
+  assignees: text('assignees').notNull().default('[]'),
+  comments: text('comments').notNull().default('[]'),
+  checklistItems: text('checklist_items').notNull().default('[]'),
 })
 
 export const users = sqliteTable('users', {

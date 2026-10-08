@@ -15,6 +15,13 @@
       "when": 1791486207602,
       "tag": "0001_remarkable_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791487095441,
+      "tag": "0002_absent_catseye",
+      "breakpoints": true
     }
   ]
 }
