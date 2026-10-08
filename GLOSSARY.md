@@ -9,7 +9,7 @@ A User assigned to work on a Card.
 _Avoid_: Card user
 
 **Comment**:
-A note on a Card authored by a User.
+A note on a Card authored by a User, with a creation time.
 
 **Checklist item**:
 A task within a Card, with a description and a completion state.

@@ -105,6 +105,14 @@ and are trimmed; `done` must be a boolean. Invalid POST/PATCH bodies return 400
 without changing the Card. Array order is retained, and PATCH can clear an array
 by sending `[]`.
 
+Each returned comment also has a server-generated `createdAt` ISO 8601 timestamp.
+Omit it for new comments (including on POST). When replacing the comments array
+via PATCH, send back `createdAt` for comments you keep or edit to preserve their
+original creation time, even if you reorder them. A supplied timestamp must
+already belong to a comment on that Card and cannot be reused more times than
+it appears there; otherwise the whole PATCH fails with 400. Stored comments
+from before this field was added receive timestamps on the next API startup.
+
 Omitting `position` on PUT appends; an optional integer `position` places the
 card at that zero-based index after removal. GET after a move verifies its
 persisted location. The seed's `card-1`–`card-6` IDs remain editable; only

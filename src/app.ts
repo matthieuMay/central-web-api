@@ -1,6 +1,6 @@
 import cors from 'cors'
 import express, { type RequestHandler } from 'express'
-import { ApiError, Store, type CardCollections } from './db/store.js'
+import { ApiError, Store, type CardCollectionsInput } from './db/store.js'
 
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -15,8 +15,8 @@ function title(value: unknown): string {
   return value.trim()
 }
 
-function collections(data: Record<string, unknown>): Partial<CardCollections> {
-  const changes: Partial<CardCollections> = {}
+function collections(data: Record<string, unknown>, allowTimestamps = false): CardCollectionsInput {
+  const changes: CardCollectionsInput = {}
   if ('assignees' in data) {
     if (!Array.isArray(data.assignees) ||
         data.assignees.some((id: unknown) => typeof id !== 'string' || !id) ||
@@ -27,11 +27,15 @@ function collections(data: Record<string, unknown>): Partial<CardCollections> {
   if ('comments' in data) {
     if (!Array.isArray(data.comments)) throw new ApiError(400, 'Invalid comments')
     changes.comments = data.comments.map((entry: unknown) => {
-      const comment = object(entry, ['user', 'comment'])
+      const comment = object(entry, allowTimestamps ? ['user', 'comment', 'createdAt'] : ['user', 'comment'])
       if (typeof comment.user !== 'string' || !comment.user ||
-          typeof comment.comment !== 'string' || !comment.comment.trim())
+          typeof comment.comment !== 'string' || !comment.comment.trim() ||
+          ('createdAt' in comment && typeof comment.createdAt !== 'string'))
         throw new ApiError(400, 'Invalid comments')
-      return { user: comment.user, comment: comment.comment.trim() }
+      return {
+        user: comment.user, comment: comment.comment.trim(),
+        ...('createdAt' in comment ? { createdAt: comment.createdAt as string } : {}),
+      }
     })
   }
   if ('checklistItems' in data) {
@@ -90,7 +94,7 @@ export function createApp(store: Store) {
     const changes = {
       ...('title' in data ? { title: title(data.title) } : {}),
       ...('description' in data ? { description: data.description as string | null } : {}),
-      ...collections(data),
+      ...collections(data, true),
     }
     res.json(await store.patch(param(req.params.cardId), changes))
   }))

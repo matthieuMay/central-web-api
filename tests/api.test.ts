@@ -14,7 +14,7 @@ import boardFixture from '../src/db/board.json' with { type: 'json' }
 import { createDb, sql, type Connection } from '../src/db/client.js'
 import { prepare } from '../src/db/migrate.js'
 import { seed } from '../src/db/seed.js'
-import { Store, type BoardData, type UserData } from '../src/db/store.js'
+import { Store, type BoardData, type CommentData, type UserData } from '../src/db/store.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -140,15 +140,20 @@ async function suite(driver: 'sqlite' | 'postgres') {
       comments: [{ user: users[0].id, comment: ' First note ' }, { user: users[1].id, comment: 'Second' }],
       checklistItems: [{ description: ' First step ', done: false }, { description: 'Second step', done: true }],
     }
-    const normalized = {
-      assignees: entries.assignees,
-      comments: [{ user: users[0].id, comment: 'First note' }, { user: users[1].id, comment: 'Second' }],
-      checklistItems: [{ description: 'First step', done: false }, { description: 'Second step', done: true }],
-    }
     const created = await request('/columns/doing/cards', 'POST', {
       id, title: '  New task  ', description: 'Saved', ...entries,
     })
     assert.equal(created.status, 201)
+    const comments = created.body.comments as CommentData[]
+    assert.deepEqual(comments.map(({ createdAt: _createdAt, ...comment }) => comment),
+      [{ user: users[0].id, comment: 'First note' }, { user: users[1].id, comment: 'Second' }])
+    for (const comment of comments) assert.equal(new Date(comment.createdAt).toISOString(), comment.createdAt)
+    assert.equal(new Set(comments.map((comment) => comment.createdAt)).size, 2)
+    const normalized = {
+      assignees: entries.assignees,
+      comments,
+      checklistItems: [{ description: 'First step', done: false }, { description: 'Second step', done: true }],
+    }
     assert.deepEqual(created.body, { id, title: 'New task', description: 'Saved', ...normalized })
     await expectError('/columns/doing/cards', 'POST', { id, title: 'Duplicate' },
       409, 'Card ID already exists')
@@ -161,6 +166,7 @@ async function suite(driver: 'sqlite' | 'postgres') {
       { assignees: [users[0].id, users[0].id] }, { assignees: null },
       { comments: [{ user: users[0].id, comment: '  ' }] },
       { comments: [{ user: users[0].id, comment: 'ok', id: 'unexpected' }] },
+      { comments: [{ user: users[0].id, comment: 'ok', createdAt: comments[0].createdAt }] },
       { checklistItems: [{ description: ' ', done: false }] },
       { checklistItems: [{ description: 'Step' }] },
       { checklistItems: [{ description: 'Step', done: 1 }] },
@@ -184,6 +190,8 @@ async function suite(driver: 'sqlite' | 'postgres') {
       { assignees: [missingUser] }, { comments: [{ user: missingUser, comment: 'Note' }] },
       { assignees: [users[0].id, users[0].id] }, { assignees: null },
       { comments: [{ user: users[0].id, comment: '' }] },
+      { comments: [{ ...comments[0], createdAt: '2020-01-01T00:00:00.000Z' }] },
+      { comments: [comments[0], comments[0], comments[0]] },
       { checklistItems: [{ description: 'Task', done: null }] },
     ]) {
       const response = await request(`/cards/${id}`, 'PATCH', { title: 'Must not change', ...invalid })
@@ -200,15 +208,29 @@ async function suite(driver: 'sqlite' | 'postgres') {
       { id: 'card-1', title: 'Edited', ...empty })
     assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { title: ' Renamed ' })).body,
       { id, title: 'Renamed', description: 'Saved', ...normalized })
-    const replaced = {
+    const replacement = {
       assignees: [users[0].id],
-      comments: [{ user: users[1].id, comment: 'Updated' }],
+      comments: [
+        { user: users[1].id, comment: 'Updated', createdAt: comments[1].createdAt },
+        { user: users[0].id, comment: 'New' },
+      ],
       checklistItems: [{ description: 'First step', done: true }],
     }
-    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', replaced)).body,
+    const replacedResponse = await request(`/cards/${id}`, 'PATCH', replacement)
+    assert.equal(replacedResponse.status, 200)
+    assert.equal(replacedResponse.body.comments[0].createdAt, comments[1].createdAt)
+    assert.notEqual(replacedResponse.body.comments[1].createdAt, comments[0].createdAt)
+    assert.equal(new Date(replacedResponse.body.comments[1].createdAt).toISOString(),
+      replacedResponse.body.comments[1].createdAt)
+    const replaced = { ...replacement, comments: replacedResponse.body.comments as CommentData[] }
+    assert.deepEqual(replacedResponse.body,
       { id, title: 'Renamed', description: 'Saved', ...replaced })
-    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { comments: [] })).body,
-      { id, title: 'Renamed', description: 'Saved', ...replaced, comments: [] })
+    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { comments: replaced.comments })).body,
+      { id, title: 'Renamed', description: 'Saved', ...replaced })
+    const beforeInvalidReuse = (await request('/boards/mini-trello')).body
+    await expectError(`/cards/${id}`, 'PATCH', { comments: [replaced.comments[1], replaced.comments[1],
+      replaced.comments[1]] }, 400, 'Invalid comment timestamp')
+    assert.deepEqual((await request('/boards/mini-trello')).body, beforeInvalidReuse)
 
     const before = (await request('/boards/mini-trello')).body
     for (const invalid of [
@@ -255,6 +277,10 @@ async function suite(driver: 'sqlite' | 'postgres') {
     assert.equal(reviewOrder[0], reviewId)
     assert.deepEqual(reviewOrder.slice(1).sort(), ['card-2', 'card-3'])
 
+    // Simulate a Card persisted by an older version, before comment timestamps existed.
+    await db.run(sql`UPDATE cards SET comments = ${JSON.stringify([{ user: users[0].id, comment: 'Legacy' }])}
+      WHERE id = ${'card-5'}`)
+
     await new Promise<void>((resolve) => server!.close(() => resolve()))
     server = undefined
     await db.close()
@@ -272,6 +298,12 @@ async function suite(driver: 'sqlite' | 'postgres') {
     assert.deepEqual(persisted.columns[3].cards.map((card) => card.id), ['card-4', 'card-6'])
     assert.deepEqual(persisted.columns[2].cards.map((card) => card.id), reviewOrder)
     assert.deepEqual(persisted.columns[1].cards.at(-1),
+      { id, title: 'Renamed', description: 'Saved', ...replaced })
+    const legacyTimestamp = persisted.columns[1].cards[0].comments[0].createdAt
+    assert.equal(new Date(legacyTimestamp).toISOString(), legacyTimestamp)
+    assert.deepEqual((await request('/boards/mini-trello')).body.columns[1].cards[0].comments,
+      [{ user: users[0].id, comment: 'Legacy', createdAt: legacyTimestamp }])
+    assert.deepEqual((await request(`/cards/${id}`, 'PATCH', { comments: [] })).body,
       { id, title: 'Renamed', description: 'Saved', ...replaced, comments: [] })
     assert.deepEqual((await request('/users')).body, usersWithExtra)
     await seed(db, true)

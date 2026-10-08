@@ -2,9 +2,12 @@ import { sql, type Connection, type Query } from './client.js'
 
 export type CardCollections = {
   assignees: string[]
-  comments: { user: string; comment: string }[]
+  comments: CommentData[]
   checklistItems: { description: string; done: boolean }[]
 }
+export type CommentData = { user: string; comment: string; createdAt: string }
+export type CommentInput = Omit<CommentData, 'createdAt'> & { createdAt?: string }
+export type CardCollectionsInput = Omit<Partial<CardCollections>, 'comments'> & { comments?: CommentInput[] }
 export type CardData = { id: string; title: string; description?: string } & CardCollections
 export type ColumnData = { id: string; title: string; cards: CardData[] }
 export type BoardData = { id: string; title: string; columns: ColumnData[] }
@@ -37,6 +40,23 @@ function cardData(row: Pick<CardRow, 'id' | 'title' | 'description' | 'assignees
   }
 }
 
+export function timestampComments(comments: CommentInput[], previous: CommentData[] = []): CommentData[] {
+  const available = new Map<string, number>()
+  for (const comment of previous)
+    available.set(comment.createdAt, (available.get(comment.createdAt) ?? 0) + 1)
+  let latest = previous.reduce((value, comment) => Math.max(value, Date.parse(comment.createdAt)), Date.now() - 1)
+  return comments.map((comment) => {
+    if (comment.createdAt !== undefined) {
+      const remaining = available.get(comment.createdAt) ?? 0
+      if (!remaining) throw new ApiError(400, 'Invalid comment timestamp')
+      available.set(comment.createdAt, remaining - 1)
+      return { ...comment, createdAt: comment.createdAt }
+    }
+    latest = Math.max(Date.now(), latest + 1)
+    return { ...comment, createdAt: new Date(latest).toISOString() }
+  })
+}
+
 export class Store {
   constructor(readonly db: Connection) {}
 
@@ -44,7 +64,7 @@ export class Store {
     return this.db.all<UserData>(sql`SELECT id, firstname, lastname FROM users ORDER BY firstname, lastname, id`)
   }
 
-  private async validateUsers(data: Partial<CardCollections>): Promise<void> {
+  private async validateUsers(data: CardCollectionsInput): Promise<void> {
     const ids = new Set([...(data.assignees ?? []), ...(data.comments ?? []).map((comment) => comment.user)])
     if (!ids.size) return
     const found = await this.db.all<{ id: string }>(sql`
@@ -80,10 +100,11 @@ export class Store {
     return board
   }
 
-  async create(columnId: string, data: Omit<CardData, keyof CardCollections> & Partial<CardCollections>): Promise<CardData> {
+  async create(columnId: string, data: Omit<CardData, keyof CardCollections> & CardCollectionsInput): Promise<CardData> {
     await this.validateUsers(data)
     const card: CardData = {
-      ...data, assignees: data.assignees ?? [], comments: data.comments ?? [], checklistItems: data.checklistItems ?? [],
+      ...data, assignees: data.assignees ?? [], comments: timestampComments(data.comments ?? []),
+      checklistItems: data.checklistItems ?? [],
     }
     const assignees = JSON.stringify(card.assignees)
     const comments = JSON.stringify(card.comments)
@@ -112,13 +133,19 @@ export class Store {
     return card
   }
 
-  async patch(id: string, changes: Partial<Omit<CardData, 'id' | 'description'>> & { description?: string | null }): Promise<CardData> {
+  async patch(id: string, changes: { title?: string; description?: string | null } & CardCollectionsInput): Promise<CardData> {
     await this.validateUsers(changes)
+    let comments: CommentData[] | undefined
+    if (changes.comments !== undefined) {
+      const [card] = await this.db.all<{ comments: string }>(sql`SELECT comments FROM cards WHERE id = ${id}`)
+      if (!card) throw new ApiError(404, 'Card not found')
+      comments = timestampComments(changes.comments, JSON.parse(card.comments) as CommentData[])
+    }
     const updates = [
       ...(changes.title === undefined ? [] : [sql`title = ${changes.title}`]),
       ...(changes.description === undefined ? [] : [sql`description = ${changes.description}`]),
       ...(changes.assignees === undefined ? [] : [sql`assignees = ${JSON.stringify(changes.assignees)}`]),
-      ...(changes.comments === undefined ? [] : [sql`comments = ${JSON.stringify(changes.comments)}`]),
+      ...(comments === undefined ? [] : [sql`comments = ${JSON.stringify(comments)}`]),
       ...(changes.checklistItems === undefined ? [] : [sql`checklist_items = ${JSON.stringify(changes.checklistItems)}`]),
     ]
     const [card] = await this.db.all<CardRow>(sql`
