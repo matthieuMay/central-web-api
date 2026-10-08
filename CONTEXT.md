@@ -16,6 +16,10 @@ _Avoid_: list (in API paths use `columns`)
 Task item in a Column: title required, description optional. Its position is expressed by order within the Column.
 _Avoid_: ticket, issue
 
+**User**:
+Person represented by a first name and last name, independent of Boards, Columns, and Cards.
+_Avoid_: account
+
 **Tag d’étape**:
 Immutable git tag marking API lab checkpoints (e.g. mock → CRUD → errors).
 _Avoid_: release version as the only progress marker

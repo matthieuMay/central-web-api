@@ -3,6 +3,7 @@ import { sql, type Connection, type Query } from './client.js'
 export type CardData = { id: string; title: string; description?: string }
 export type ColumnData = { id: string; title: string; cards: CardData[] }
 export type BoardData = { id: string; title: string; columns: ColumnData[] }
+export type UserData = { id: string; firstname: string; lastname: string }
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -23,6 +24,10 @@ function cardData(row: CardRow): CardData {
 
 export class Store {
   constructor(readonly db: Connection) {}
+
+  async users(): Promise<UserData[]> {
+    return this.db.all<UserData>(sql`SELECT id, firstname, lastname FROM users ORDER BY firstname, lastname, id`)
+  }
 
   async board(id: string): Promise<BoardData | null> {
     const rows = await this.db.all<BoardRow>(sql`

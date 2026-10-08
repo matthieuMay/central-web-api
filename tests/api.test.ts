@@ -11,10 +11,10 @@ import { promisify } from 'node:util'
 import { v7 } from 'uuid'
 import { createApp } from '../src/app.js'
 import boardFixture from '../src/db/board.json' with { type: 'json' }
-import { createDb, type Connection } from '../src/db/client.js'
+import { createDb, sql, type Connection } from '../src/db/client.js'
 import { prepare } from '../src/db/migrate.js'
 import { seed } from '../src/db/seed.js'
-import { Store, type BoardData } from '../src/db/store.js'
+import { Store, type BoardData, type UserData } from '../src/db/store.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -53,6 +53,21 @@ async function suite(driver: 'sqlite' | 'postgres') {
     const health = await request('/health')
     assert.equal(health.status, 200)
     assert.deepEqual(health.body, { ok: true })
+    const initialUsers = await request('/users')
+    assert.equal(initialUsers.status, 200)
+    const users = initialUsers.body as UserData[]
+    assert.equal(users.length, 10)
+    assert.equal(new Set(users.map((user) => user.id)).size, 10)
+    assert.equal(new Set(users.map((user) => `${user.firstname} ${user.lastname}`)).size, 10)
+    for (const user of users) {
+      assert.deepEqual(Object.keys(user), ['id', 'firstname', 'lastname'])
+      assert.match(user.id, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      assert.ok(user.firstname && user.lastname)
+    }
+    const extraId = v7()
+    await db.run(sql`INSERT INTO users (id, firstname, lastname) VALUES (${extraId}, ${'Ada'}, ${'Lovelace'})`)
+    const usersWithExtra = (await request('/users')).body as UserData[]
+    assert.equal(usersWithExtra.length, 11)
     const initial = await request('/boards/mini-trello')
     assert.equal(initial.status, 200)
     const board = initial.body as BoardData
@@ -199,8 +214,12 @@ async function suite(driver: 'sqlite' | 'postgres') {
     assert.deepEqual(persisted.columns[3].cards.map((card) => card.id), ['card-4', 'card-6'])
     assert.deepEqual(persisted.columns[2].cards.map((card) => card.id), reviewOrder)
     assert.deepEqual(persisted.columns[1].cards.at(-1), { id, title: 'Renamed', description: 'Saved' })
+    assert.deepEqual((await request('/users')).body, usersWithExtra)
     await seed(db, true)
     assert.deepEqual(await new Store(db).board('mini-trello'), board)
+    const resetUsers = (await request('/users')).body as UserData[]
+    assert.equal(resetUsers.length, 10)
+    assert.ok(resetUsers.every((user) => user.id !== extraId && !users.some((old) => old.id === user.id)))
     assert.equal((await request('/cards/card-1', 'PATCH', { title: 'Changed again' })).status, 200)
     await execFileAsync('npm', ['run', 'db:reset'], {
       cwd: fileURLToPath(new URL('..', import.meta.url)),
@@ -209,6 +228,9 @@ async function suite(driver: 'sqlite' | 'postgres') {
     const restored = await fetch(base + '/boards/mini-trello')
     assert.equal(restored.status, 200)
     assert.deepEqual(await restored.json(), boardFixture)
+    const commandResetUsers = (await request('/users')).body as UserData[]
+    assert.equal(commandResetUsers.length, 10)
+    assert.ok(commandResetUsers.every((user) => !resetUsers.some((old) => old.id === user.id)))
   } finally {
     if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()))
     await db.close()

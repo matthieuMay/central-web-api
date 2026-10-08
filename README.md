@@ -59,6 +59,11 @@ Sprint 2 does not require resetting after Sprint 1. SQLite files and `.env`
 are ignored by Git. The source-controlled Drizzle migrations live in
 `drizzle/postgres/` and `drizzle/sqlite/`.
 
+The independent `users` table is seeded with 10 randomly named Users when
+empty. `GET /users` returns an array of `{ id, firstname, lastname }` objects.
+Normal restarts preserve Users; `npm run db:reset` replaces all Users with 10
+newly generated ones alongside the seed board.
+
 ## Try the four Day 2 routes
 
 All responses, including errors, are JSON. The default allowed Vite origin is

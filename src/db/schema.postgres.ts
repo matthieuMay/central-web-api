@@ -19,3 +19,9 @@ export const cards = pgTable('cards', {
   description: text('description'),
   position: integer('position').notNull(),
 })
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  firstname: text('firstname').notNull(),
+  lastname: text('lastname').notNull(),
+})

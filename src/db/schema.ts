@@ -24,3 +24,9 @@ export const cards = sqliteTable('cards', {
   description: text('description'),
   position: integer('position').notNull().default(0),
 })
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  firstname: text('firstname').notNull(),
+  lastname: text('lastname').notNull(),
+})

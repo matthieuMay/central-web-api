@@ -7,7 +7,7 @@ const db = createDb()
 try {
   await prepare(db)
   await seed(db, true)
-  console.log('Initial board restored')
+  console.log('Initial board and users restored')
 } finally {
   await db.close()
 }

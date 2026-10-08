@@ -8,6 +8,13 @@
       "when": 1791404826970,
       "tag": "0000_thankful_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791486207259,
+      "tag": "0001_loose_korath",
+      "breakpoints": true
     }
   ]
 }

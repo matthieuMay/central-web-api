@@ -30,6 +30,9 @@ export function createApp(store: Store) {
   app.use(express.json())
 
   app.get('/health', (_req, res) => { res.json({ ok: true }) })
+  app.get('/users', asyncRoute(async (_req, res) => {
+    res.json(await store.users())
+  }))
   app.get('/boards/:id', asyncRoute(async (req, res) => {
     const board = await store.board(param(req.params.id))
     if (!board) throw new ApiError(404, 'Board not found')
